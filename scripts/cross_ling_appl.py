@@ -21,8 +21,17 @@ class CLI:
         os.makedirs(self.args.out_dir, exist_ok=True)
 
 
-def create_rows(dump_files, locale):
+def issue_not_created(issues_path, style_rule_id):
+    issues_created = open(issues_path, 'r', encoding='utf-8')
+    for line in issues_created:
+        if line == style_rule_id:
+            return False
+    return True
+
+
+def create_rows(issues_path, dump_files, locale):
     rows = []
+    missing_issues = []
     for file in dump_files:
         for element in (file.rulegroups + file.rules):
             for comment in element.comments:
@@ -34,7 +43,9 @@ def create_rows(dump_files, locale):
                         ','.join([tt.tag for tt in element.tone_tags]),
                         comment.tag, comment.content
                     ])
-    return rows
+                    if issue_not_created(issues_path, element.id):
+                        missing_issues.append(element.id)
+    return rows, missing_issues
 
 
 # table schema:
@@ -50,17 +61,20 @@ def __main__():
     logger = logger_wrapper(cli.parser.prog, cli.args.verbosity)
     logger.debug(f"Starting script...\nInvoked with options: {cli.args}")
     all_path = path.join(cli.args.out_dir, 'all_comments.csv')
+    issues_path = path.join(cli.args.out_dir, 'issues_created.txt')
     # diff_path = path.join(cli.args.out_dir, 'diff_comments.csv')
     headers = ['date', 'locale', 'file', 'rule_id', 'sub_id', 'tone_tags', 'tag', 'content']
     # to_rows, from_rows = [], []
     to_rows = []
+    # issues_to_be_created = []
     for locale in LOCALES:
         for repo_name, repo_dir in REPOS.items():
             # from_repo_path = path.join(cli.args.from_dir, repo_dir)
             to_repo_path = path.join(cli.args.to_dir, repo_dir)
             # from_dump = RuleDump(from_repo_path, locale)
             to_dump = RuleDump(to_repo_path, locale)
-            to_rows += create_rows(to_dump.files, locale)
+            new_rows, issues_to_be_created = create_rows(issues_path, to_dump.files, locale)
+            to_rows += new_rows
             # from_rows += create_rows(from_dump.files, locale)
     df = DataFrame(to_rows, columns=headers).sort_values(['date', 'locale', 'rule_id', 'sub_id'])
     logger.info(df.describe())
